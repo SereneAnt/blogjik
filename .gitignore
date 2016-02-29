@@ -1,0 +1,18 @@
+# Idea artifacts
+/.idea
+/*.iml
+
+# Build artifacts
+/project/project
+/project/target
+/public/target
+/target
+
+# Run artifacts
+/logs
+
+#Configs
+/src/main/resources/application.conf
+/src/main/resources/application-logger.xml
+/src/test/resources/test.conf
+/src/test/resources/logback.xml

@@ -1,0 +1,8 @@
+GET        /posts                       com.blogjik.controller.PostController.list
+GET        /posts/:id                   com.blogjik.controller.PostController.find(id: String)
+#POST       /posts                       com.blogjik.controller.PostController.save
+#PUT        /posts/:id                   com.blogjik.controller.PostController.update(id: String)
+POST       /login                       com.blogjik.controller.LoginController.login
+
+# Map static resources from the /public folder to the /assets URL path
+GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)

@@ -1,0 +1,1 @@
+INSERT INTO public.posts (post_id, author_id, title, body, created, updated) VALUES ('1', '1', 'first blog!', 'this is first blog', '2016-02-26 17:09:18.168000', '2016-02-26 17:09:23.513000');

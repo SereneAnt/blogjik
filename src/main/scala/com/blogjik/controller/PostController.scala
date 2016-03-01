@@ -30,7 +30,7 @@ class PostController @Inject()(postDao: PostDao) extends Controller {
   })
 
   def find(id: String) = Action.async({ request =>
-    val postQ = postDao.postQueries
+    val postQ = postDao.postQueries 
     postDao.find(postQ.byId(id))(p => p).map({
       case Some(post) => Ok(Json.toJson(post))
       case None => NotFound

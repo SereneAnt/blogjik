@@ -45,6 +45,10 @@ class PostController @Inject()(postDao: PostDao) extends Controller {
       case None => NotFound
     })
   })
+
+  def statistic() = Action.async({ request =>
+    postDao.statistic().map({ seq => Ok(Json.toJson(seq.map(StatisticDto.tupled))) })
+  })
 }
 
 
@@ -80,8 +84,10 @@ object PostController {
   implicit val postFormat: Format[Post] = Json.format[Post]
   implicit val authorFormat: Format[Author] = Json.format[Author]
   implicit val authorPostFormat: Format[AuthorPostDto] = Json.format[AuthorPostDto]
+  implicit val statisticFormat: Format[StatisticDto] = Json.format[StatisticDto]
 
   case class AuthorPostDto(author: Author, posts: Seq[Post])
+  case class StatisticDto(postId: String, authorId: String, title: String, likes: Int, avgByAuthor: Double)
 
   def toDto(seq : Seq[(Author, Seq[Post])]) : Seq[AuthorPostDto] = {
     seq.map({case (author, posts) => AuthorPostDto(author= author, posts = posts) })

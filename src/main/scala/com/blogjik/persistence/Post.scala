@@ -27,8 +27,9 @@ trait PostComponent {
     def body = column[String]("body", O.Length(2000, varying = true))
     def created = column[OffsetDateTime]("created")
     def updated = column[Option[OffsetDateTime]]("updated")
+    def likes = column[Int]("likes")
 
-    def allColumns = (id, authorId, title, body, created, updated)
+    def allColumns = (id, authorId, title, body, created, updated, likes)
 
     // Every table needs a * projection with the same type as the table's type parameter
     def * = allColumns.shaped <> (mapRowTupled, unMapRow)
@@ -36,14 +37,15 @@ trait PostComponent {
 
   object PostTable {
     def mapRow(id: String, authorId: String, title: String, body: String,
-               created: OffsetDateTime, updated: Option[OffsetDateTime]): Post = {
-      Post(id, authorId, title, body, created, updated)
+               created: OffsetDateTime, updated: Option[OffsetDateTime],
+               likes: Int): Post = {
+      Post(id, authorId, title, body, created, updated, likes)
     }
 
     val mapRowTupled = (mapRow _).tupled
 
     def unMapRow(p: Post) = {
-      val tuple = (p.id, p.authorId, p.title, p.body, p.created, p.updated)
+      val tuple = (p.id, p.authorId, p.title, p.body, p.created, p.updated, p.likes)
       Some(tuple)
     }
   }
@@ -59,6 +61,9 @@ trait PostDao {
   def find[T](query: PostQuery)(block: (Option[Post]) => Option[T]): Future[Option[T]]
   def listAuthorWithPosts[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Seq[(Author, Seq[Post])]) => Seq[T]): Future[Seq[T]]
   def findAuthorWithPost[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Option[(Author, Seq[Post])]) => Option[T]): Future[Option[T]]
+
+
+  def statistic(): Future[Seq[(String, String, String, Int, Double)]]
 
   def authorQueries: AuthorQ
   def postQueries: PostQ
@@ -109,7 +114,7 @@ class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
       seq <- listAuthorWithPostsAction(authorsQuery, query)
       rez <- DBIO.successful(block(seq))
     } yield rez
-    db.run(action)
+    db.run(action.transactionally)
   }
 
   def findAuthorWithPost[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Option[(Author, Seq[Post])]) => Option[T]): Future[Option[T]] = {
@@ -117,7 +122,7 @@ class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
       seq <- listAuthorWithPostsAction(authorsQuery.take(1), query)
       rez <- DBIO.successful(block(seq.headOption))
     } yield rez
-    db.run(action)
+    db.run(action.transactionally)
   }
 
   override lazy val postQueries: PostQ = new PostQ {
@@ -130,6 +135,10 @@ class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
   override lazy val authorQueries: AuthorQ = new AuthorQ {
     def *(): AuthorsQuery = authors
     def byAuthor(authorId: String): AuthorsQuery = authors.filter(_.id === authorId)
+  }
+
+  override def statistic(): Future[Seq[(String, String, String, Int, Double)]] = {
+    db.run(sql"SELECT post_id, author_id, title, likes, avg(likes) OVER(PARTITION BY author_id) from posts".as[(String, String, String, Int, Double)])
   }
 
   private def listAction(postsQuery: Query[PostTable, Post, Seq]): DBIO[Seq[Post]] = {

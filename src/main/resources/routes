@@ -1,5 +1,7 @@
 GET        /posts                       com.blogjik.controller.PostController.list
+GET        /a-posts                     com.blogjik.controller.PostController.listWithAuthors
 GET        /posts/:id                   com.blogjik.controller.PostController.find(id: String)
+GET        /posts/author/:id            com.blogjik.controller.PostController.findByAuthorId(id: String)
 #POST       /posts                       com.blogjik.controller.PostController.save
 #PUT        /posts/:id                   com.blogjik.controller.PostController.update(id: String)
 POST       /login                       com.blogjik.controller.LoginController.login

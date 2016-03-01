@@ -79,18 +79,18 @@ trait AuthorComponent {
 
 @ImplementedBy(classOf[AuthorDaoImpl])
 trait AuthorDao {
-  type AuthorQuery[T]
-  def list[T](query: AuthorQuery[Seq[Author]])(block: (Seq[Author]) => Seq[T]): Future[Seq[T]]
-  def find[T](query: AuthorQuery[Option[Author]])(block: (Option[Author]) => Option[T]): Future[Option[T]]
+  type AuthorQuery
+  def list[T](query: AuthorQuery)(block: (Seq[Author]) => Seq[T]): Future[Seq[T]]
+  def find[T](query: AuthorQuery)(block: (Option[Author]) => Option[T]): Future[Option[T]]
   def save(author: Author): Future[Unit]
-  def findWithDetails[T](query: AuthorQuery[Option[Author]])(block: Option[(Author, Option[Details])] => Option[T]): Future[Option[T]]
-  def listWithDetails[T](query: AuthorQuery[Seq[Author]])(block: (Seq[(Author, Option[Details])]) => Seq[T]): Future[Seq[T]]
+  def findWithDetails[T](query: AuthorQuery)(block: Option[(Author, Option[Details])] => Option[T]): Future[Option[T]]
+  def listWithDetails[T](query: AuthorQuery)(block: (Seq[(Author, Option[Details])]) => Seq[T]): Future[Seq[T]]
 
   def queries: Q
   trait Q {
-    def *(): AuthorQuery[Seq[Author]]
-    def getById(id: String): AuthorQuery[Option[Author]]
-    def getByEmail(email: String): AuthorQuery[Option[Author]]
+    def *(): AuthorQuery
+    def byId(id: String): AuthorQuery
+    def byEmail(email: String): AuthorQuery
   }
 }
 
@@ -101,9 +101,9 @@ class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigPro
   import driver.api._
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-  type AuthorQuery[R] = Query[AuthorTable, Author, Seq]
+  type AuthorQuery = Query[AuthorTable, Author, Seq]
 
-  override def list[T](query: AuthorQuery[Seq[Author]])(block: (Seq[Author]) => Seq[T]): Future[Seq[T]] = {
+  override def list[T](query: AuthorQuery)(block: (Seq[Author]) => Seq[T]): Future[Seq[T]] = {
     val action = for {
       seq <- listAction(query)
       rez <- DBIO.successful(block(seq))
@@ -112,9 +112,9 @@ class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigPro
     db.run(action.transactionally)
   }
 
-  override def find[T](query: AuthorQuery[Option[Author]])(block: (Option[Author]) => Option[T]): Future[Option[T]] = {
+  override def find[T](query: AuthorQuery)(block: (Option[Author]) => Option[T]): Future[Option[T]] = {
     val action = for {
-      seq <- listAction(query)
+      seq <- listAction(query.take(1))
       rez <- DBIO.successful(block(seq.headOption))
     } yield rez
 
@@ -123,7 +123,7 @@ class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigPro
 
   override def save(author: Author): Future[Unit] = db.run(DBIO.seq(authors += author))
 
-  override def listWithDetails[T](query: AuthorQuery[Seq[Author]])(block: (Seq[(Author, Option[Details])]) => Seq[T]): Future[Seq[T]] = {
+  override def listWithDetails[T](query: AuthorQuery)(block: (Seq[(Author, Option[Details])]) => Seq[T]): Future[Seq[T]] = {
     val action = for {
       seq <- listWithDetailsAction(query, details)
       rez <- DBIO.successful(block(seq))
@@ -132,24 +132,24 @@ class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigPro
     db.run(action.transactionally)
   }
 
-  override def findWithDetails[T](query: AuthorQuery[Option[Author]])(block: (Option[(Author, Option[Details])]) => Option[T]): Future[Option[T]] = {
+  override def findWithDetails[T](query: AuthorQuery)(block: (Option[(Author, Option[Details])]) => Option[T]): Future[Option[T]] = {
     val action = for {
-      seq <- listWithDetailsAction(query, details)
+      seq <- listWithDetailsAction(query.take(1), details)
       rez <- DBIO.successful(block(seq.headOption))
     } yield rez
 
     db.run(action.transactionally)
   }
 
-  override def queries: Q = new Q {
-    override def *(): AuthorQuery[Seq[Author]] = authors
+  override lazy val queries: Q = new Q {
+    override def *(): AuthorQuery = authors
 
-    override def getById(id: String): AuthorQuery[Option[Author]] = {
-      authors.filter(_.id === id).take(1)
+    override def byId(id: String): AuthorQuery = {
+      authors.filter(_.id === id)
     }
 
-    override def getByEmail(email: String): AuthorQuery[Option[Author]] = {
-      authors.filter(_.email === email).take(1)
+    override def byEmail(email: String): AuthorQuery = {
+      authors.filter(_.email === email)
     }
   }
 

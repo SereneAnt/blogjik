@@ -14,11 +14,12 @@ class LoginController @Inject()(authorsDao: AuthorDao) extends Controller {
   import LoginController._
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
+  // TODO: clear mess with email/login - use either email either login
   def login() = Action.async(parse.urlFormEncoded) { request =>
     for {
       loginData <- Future { extractLoginData(request) }
-      fromDB <- authorsDao.findWithDetails(authorsDao.queries.getByEmail(loginData.email)) {
-        case Some(pair@(author, Some(details))) => Some(LoginData(details.login, details.password))
+      fromDB <- authorsDao.findWithDetails(authorsDao.queries.byEmail(loginData.email)) {
+        case Some((author, Some(details))) => Some(LoginData(author.email, details.password))
         case _ => None
       }
     } yield {

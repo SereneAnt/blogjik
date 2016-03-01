@@ -53,9 +53,24 @@ trait PostComponent {
 
 @ImplementedBy(classOf[PostDaoImpl])
 trait PostDao {
-  def list(): Future[Seq[Post]]
-  def listWithAuthors[T](block: (Seq[(Author, Option[Post])]) => Seq[T]): Future[Seq[T]]
-  def save(p: Post): Future[Unit]
+  type PostQuery
+  type AuthorsQuery
+  def list[T](query: PostQuery)(block: (Seq[Post]) => Seq[T]): Future[Seq[T]]
+  def find[T](query: PostQuery)(block: (Option[Post]) => Option[T]): Future[Option[T]]
+  def listAuthorWithPosts[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Seq[(Author, Seq[Post])]) => Seq[T]): Future[Seq[T]]
+  def findAuthorWithPost[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Option[(Author, Seq[Post])]) => Option[T]): Future[Option[T]]
+
+  def authorQueries: AuthorQ
+  def postQueries: PostQ
+  trait PostQ {
+    def *(): PostQuery
+    def byId(id: String): PostQuery
+    def byTitle(title: String): PostQuery
+  }
+  trait AuthorQ {
+    def *(): AuthorsQuery
+    def byAuthor(authorId: String): AuthorsQuery
+  }
 }
 
 class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvider)
@@ -67,16 +82,54 @@ class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
   import driver.api._
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-  override def list(): Future[Seq[Post]] = db.run(listAction(posts))
+  type PostQuery = Query[PostTable, Post, Seq]
+  type AuthorsQuery = Query[AuthorTable, Author, Seq]
 
-  override def save(post: Post): Future[Unit] = db.run(DBIO.seq(posts += post))
 
-  override def listWithAuthors[T](block: (Seq[(Author, Option[Post])]) => Seq[T]): Future[Seq[T]] = {
+  override def list[T](query: PostQuery)(block: (Seq[Post]) => Seq[T]): Future[Seq[T]] = {
     val action = for {
-      seq <- listWithAuthorsAction(authors, posts)
+      seq <- listAction(query)
+      rez <- DBIO.successful(block(seq))
+    } yield rez
+
+    db.run(action.transactionally)
+  }
+
+  def find[T](query: PostQuery)(block: (Option[Post]) => Option[T]): Future[Option[T]] = {
+    val action = for {
+      seq <- listAction(query.take(1))
+      rez <- DBIO.successful(block(seq.headOption))
+    } yield rez
+
+    db.run(action.transactionally)
+  }
+
+  def listAuthorWithPosts[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Seq[(Author, Seq[Post])]) => Seq[T]): Future[Seq[T]] = {
+    val action = for {
+      seq <- listAuthorWithPostsAction(authorsQuery, query)
       rez <- DBIO.successful(block(seq))
     } yield rez
     db.run(action)
+  }
+
+  def findAuthorWithPost[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Option[(Author, Seq[Post])]) => Option[T]): Future[Option[T]] = {
+    val action = for {
+      seq <- listAuthorWithPostsAction(authorsQuery.take(1), query)
+      rez <- DBIO.successful(block(seq.headOption))
+    } yield rez
+    db.run(action)
+  }
+
+  override lazy val postQueries: PostQ = new PostQ {
+    def *(): PostQuery = posts
+    def byId(id: String): PostQuery = posts.filter(_.id === id)
+    def byTitle(title: String): PostQuery = posts.filter(_.title like title)
+    def byAuthor(authorId: String): PostQuery = posts.filter(_.authorId === authorId)
+  }
+
+  override lazy val authorQueries: AuthorQ = new AuthorQ {
+    def *(): AuthorsQuery = authors
+    def byAuthor(authorId: String): AuthorsQuery = authors.filter(_.id === authorId)
   }
 
   private def listAction(postsQuery: Query[PostTable, Post, Seq]): DBIO[Seq[Post]] = {
@@ -87,15 +140,18 @@ class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
     query.result.map(seq => seq.map { post => PostTable.mapRowTupled(post) })
   }
 
-  private def listWithAuthorsAction(authorsQuery: Query[AuthorTable, Author, Seq],
-                                    postsQuery: Query[PostTable, Post, Seq]): DBIO[Seq[(Author, Option[Post])]] = {
+  private def listAuthorWithPostsAction(authorsQuery: Query[AuthorTable, Author, Seq],
+                                    postsQuery: Query[PostTable, Post, Seq]): DBIO[Seq[(Author, Seq[Post])]] = {
     val query = for {
       (a, p) <- authorsQuery joinLeft postsQuery on (_.id === _.authorId)
     } yield (a.allColumns, p.map(_.allColumns))
 
-    query.result.map(seq => seq.map {
-      case (author, post) => (AuthorTable.mapRowTupled(author), post.map(PostTable.mapRowTupled))
-    })
-  }
+    // TODO describe this magic
+    query.result.map( seq => seq.groupBy(_._1._1).map({
+      case (author_id, queryResult) =>
+        (AuthorTable.mapRowTupled(queryResult.head._1),
+          queryResult.collect({ case (_, Some(post)) => PostTable.mapRowTupled(post) }))
+    }).toSeq )
 
+  }
 }

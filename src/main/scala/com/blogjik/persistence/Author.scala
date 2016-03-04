@@ -15,7 +15,6 @@ trait AuthorComponent {
 
   import driver.api._
 
-
   class AuthorTable(tag: Tag) extends Table[Author](tag, "authors") {
 
     import AuthorTable._
@@ -72,23 +71,25 @@ trait AuthorComponent {
 
   val authors = TableQuery[AuthorTable]
   val details = TableQuery[DetailTable]
-
 }
 
 
 @ImplementedBy(classOf[AuthorDaoImpl])
-trait AuthorDao extends AuthorComponent with HasDatabaseConfigProvider[PostgresDriver]  {
+trait AuthorDao {
 
-  type AuthorQuery = DBQuery[AuthorTable, Author, Seq]
+  protected type A
+  type AuthorQuery = DBQuery[A, Author, Seq]
 
-  def list[T](query: AuthorQuery)(block: (Seq[Author]) => Seq[T]): DBMonad[Seq[T]]
-  def find[T](query: AuthorQuery)(block: (Option[Author]) => Option[T]): DBMonad[Option[T]]
-  def save(author: Author): Future[Unit]
-  def findWithDetails[T](query: AuthorQuery)(block: Option[(Author, Option[Details])] => Option[T]): DBMonad[Option[T]]
-  def listWithDetails[T](query: AuthorQuery)(block: (Seq[(Author, Option[Details])]) => Seq[T]): DBMonad[Seq[T]]
+  def list(query: AuthorQuery): DBMonad[Seq[Author]]
+  def find(query: AuthorQuery): DBMonad[Option[Author]]
+  def save(author: Author): DBMonad[Author]
+  def findWithDetails(query: AuthorQuery): DBMonad[Option[(Author, Option[Details])]]
+  def listWithDetails(query: AuthorQuery): DBMonad[Seq[(Author, Option[Details])]]
   def run[T](action: DBMonad[T]): Future[T]
 
+
   def queries: Q
+
   trait Q {
     def *(): AuthorQuery
     def byId(id: String): AuthorQuery
@@ -96,44 +97,45 @@ trait AuthorDao extends AuthorComponent with HasDatabaseConfigProvider[PostgresD
   }
 }
 
-class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvider) extends AuthorDao {
+class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvider) extends AuthorDao
+    with AuthorComponent
+    with HasDatabaseConfigProvider[PostgresDriver]   {
 
   import driver.api._
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-  override def list[T](query: AuthorQuery)(block: (Seq[Author]) => Seq[T]): DBMonad[Seq[T]] = {
-    val action = for {
-      seq <- listAction(query.underling)
-      rez <- DBIO.successful(block(seq))
-    } yield rez
+  override protected type A = AuthorTable
 
-    DBMonad(action)
+  override def list(query: AuthorQuery): DBMonad[Seq[Author]] = {
+    DBMonad(listAction(query.underling))
   }
 
-  override def find[T](query: AuthorQuery)(block: (Option[Author]) => Option[T]): DBMonad[Option[T]] = {
+  override def find(query: AuthorQuery): DBMonad[Option[Author]] = {
     val action = for {
       seq <- listAction(query.underling.take(1))
-      rez <- DBIO.successful(block(seq.headOption))
+      rez <- DBIO.successful(seq.headOption)
     } yield rez
 
     DBMonad(action)
   }
 
-  override def save(author: Author): Future[Unit] = db.run(DBIO.seq(authors += author))
-
-  override def listWithDetails[T](query: AuthorQuery)(block: (Seq[(Author, Option[Details])]) => Seq[T]): DBMonad[Seq[T]] = {
+  override def save(author: Author): DBMonad[Author] = {
     val action = for {
-      seq <- listWithDetailsAction(query.underling, details)
-      rez <- DBIO.successful(block(seq))
+      _ <- DBIO.seq(authors += author)
+      rez <- DBIO.successful(author)
     } yield rez
 
     DBMonad(action)
   }
 
-  override def findWithDetails[T](query: AuthorQuery)(block: (Option[(Author, Option[Details])]) => Option[T]): DBMonad[Option[T]] = {
+  override def listWithDetails(query: AuthorQuery): DBMonad[Seq[(Author, Option[Details])]] = {
+    DBMonad(listWithDetailsAction(query.underling, details))
+  }
+
+  override def findWithDetails(query: AuthorQuery): DBMonad[Option[(Author, Option[Details])]] = {
     val action = for {
       seq <- listWithDetailsAction(query.underling.take(1), details)
-      rez <- DBIO.successful(block(seq.headOption))
+      rez <- DBIO.successful(seq.headOption)
     } yield rez
 
     DBMonad(action)
@@ -151,7 +153,7 @@ class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigPro
     }
   }
 
-  def run[T](action: DBMonad[T]): Future[T] = db.run(action.underlined.transactionally)
+  override def run[T](action: DBMonad[T]): Future[T] = db.run(action.underlined.transactionally)
 
   private def listAction(authorsQuery: Query[AuthorTable, Author, Seq]): DBIO[Seq[Author]] = {
     val query = for {

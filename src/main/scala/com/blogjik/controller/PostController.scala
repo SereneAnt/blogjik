@@ -5,7 +5,7 @@ import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 import com.blogjik.model.{Author, Post}
-import com.blogjik.persistence.PostDao
+import com.blogjik.persistence.{DBMonad, AuthorDao, PostDao}
 import play.api.mvc.Action
 
 import play.api.libs.json._
@@ -14,36 +14,54 @@ import play.api.mvc._
 import scala.util.{Success, Try}
 
 
-class PostController @Inject()(postDao: PostDao) extends Controller {
+class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends Controller {
 
   import PostController._
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
   def list() = Action.async({ request =>
-    postDao.list(postDao.postQueries.*())(seq => seq).map(seq => Ok(Json.toJson(seq)) )
+    postDao.run(postDao.list(postDao.postQueries.*())).map(seq => Ok(Json.toJson(seq)) )
   })
 
   def listWithAuthors() = Action.async({ request =>
     val authorQ = postDao.authorQueries
     val postQ = postDao.postQueries
-    postDao.listAuthorWithPosts(authorQ.*(), postQ.*())(toDto).map(seq => Ok(Json.toJson(seq)))
+    postDao.run(postDao.listAuthorWithPosts(authorQ.*(), postQ.*()).map(toDto)).map(seq => Ok(Json.toJson(seq)))
   })
 
   def find(id: String) = Action.async({ request =>
     val postQ = postDao.postQueries
-    postDao.find(postQ.byId(id))(p => p).map({
+    postDao.run(postDao.find(postQ.byId(id))).map({
       case Some(post) => Ok(Json.toJson(post))
       case None => NotFound
     })
   })
 
+  // example of composition in dao layer
   def findByAuthorId(id: String) = Action.async({ request =>
     val authorQ = postDao.authorQueries
     val postQ = postDao.postQueries
-    postDao.findAuthorWithPost(authorQ.byAuthor(id), postQ.*())(toDto).map({
+    postDao.run(postDao.findAuthorWithPost(authorQ.byAuthor(id), postQ.*())).map(toDto).map({
       case Some(dto) => Ok(Json.toJson(dto))
       case None => NotFound
     })
+  })
+
+  // example of composition outside dao layer
+  def findByAuthorIdV2(id: String) = Action.async({ request =>
+    val action = for {
+      author <- authorDao.find(authorDao.queries.byId(id))
+      posts <- author match {
+        case Some(a) => postDao.list(postDao.postQueries.byAuthor(a.id))
+        case _ => DBMonad.successful(Seq())
+      }
+    } yield author.map(a => (a ,posts))
+
+    postDao.run(action).map(toDto).map({
+      case Some(dto) => Ok(Json.toJson(dto))
+      case None => NotFound
+    })
+
   })
 
   def statistic() = Action.async({ request =>

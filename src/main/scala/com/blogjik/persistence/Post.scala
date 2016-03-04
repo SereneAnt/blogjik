@@ -55,86 +55,96 @@ trait PostComponent {
 
 @ImplementedBy(classOf[PostDaoImpl])
 trait PostDao {
-  type PostQuery
-  type AuthorsQuery
-  def list[T](query: PostQuery)(block: (Seq[Post]) => Seq[T]): Future[Seq[T]]
-  def find[T](query: PostQuery)(block: (Option[Post]) => Option[T]): Future[Option[T]]
-  def listAuthorWithPosts[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Seq[(Author, Seq[Post])]) => Seq[T]): Future[Seq[T]]
-  def findAuthorWithPost[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Option[(Author, Seq[Post])]) => Option[T]): Future[Option[T]]
 
+  protected type P
+  protected type A
+
+  type PostQuery = DBQuery[P, Post, Seq]
+  type AuthorsQuery = DBQuery[A, Author, Seq]
+
+  def list(query: PostQuery): DBMonad[Seq[Post]]
+  def find(query: PostQuery): DBMonad[Option[Post]]
+  def listAuthorWithPosts(authorsQuery: AuthorsQuery, query: PostQuery): DBMonad[Seq[(Author, Seq[Post])]]
+  def findAuthorWithPost(authorsQuery: AuthorsQuery, query: PostQuery): DBMonad[Option[(Author, Seq[Post])]]
+  def run[T](action: DBMonad[T]): Future[T]
 
   def statistic(): Future[Seq[(String, String, String, Int, Double)]]
 
   def authorQueries: AuthorQ
   def postQueries: PostQ
+
   trait PostQ {
     def *(): PostQuery
     def byId(id: String): PostQuery
     def byTitle(title: String): PostQuery
+    def byAuthor(authorId: String): PostQuery
   }
+
   trait AuthorQ {
     def *(): AuthorsQuery
     def byAuthor(authorId: String): AuthorsQuery
   }
 }
 
-class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvider)
-  extends PostDao
-  with PostComponent
-  with AuthorComponent
-  with HasDatabaseConfigProvider[PostgresDriver] {
+class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvider) extends PostDao
+    with PostComponent
+    with AuthorComponent
+    with HasDatabaseConfigProvider[PostgresDriver] {
 
   import driver.api._
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-  type PostQuery = Query[PostTable, Post, Seq]
-  type AuthorsQuery = Query[AuthorTable, Author, Seq]
+  override protected type P = PostTable
+  override protected type A = AuthorTable
 
-
-  override def list[T](query: PostQuery)(block: (Seq[Post]) => Seq[T]): Future[Seq[T]] = {
+  override def list(query: PostQuery): DBMonad[Seq[Post]] = {
     val action = for {
-      seq <- listAction(query)
-      rez <- DBIO.successful(block(seq))
+      seq <- listAction(query.underling)
+      rez <- DBIO.successful(seq)
     } yield rez
 
-    db.run(action.transactionally)
+    DBMonad(action)
   }
 
-  def find[T](query: PostQuery)(block: (Option[Post]) => Option[T]): Future[Option[T]] = {
+  override def find(query: PostQuery): DBMonad[Option[Post]] = {
     val action = for {
-      seq <- listAction(query.take(1))
-      rez <- DBIO.successful(block(seq.headOption))
+      seq <- listAction(query.underling.take(1))
+      rez <- DBIO.successful(seq.headOption)
     } yield rez
 
-    db.run(action.transactionally)
+    DBMonad(action)
   }
 
-  def listAuthorWithPosts[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Seq[(Author, Seq[Post])]) => Seq[T]): Future[Seq[T]] = {
+  override def listAuthorWithPosts(authorsQuery: AuthorsQuery, query: PostQuery): DBMonad[Seq[(Author, Seq[Post])]] = {
     val action = for {
-      seq <- listAuthorWithPostsAction(authorsQuery, query)
-      rez <- DBIO.successful(block(seq))
+      seq <- listAuthorWithPostsAction(authorsQuery.underling, query.underling)
+      rez <- DBIO.successful(seq)
     } yield rez
-    db.run(action.transactionally)
+
+    DBMonad(action)
   }
 
-  def findAuthorWithPost[T](authorsQuery: AuthorsQuery, query: PostQuery)(block: (Option[(Author, Seq[Post])]) => Option[T]): Future[Option[T]] = {
+  override def findAuthorWithPost(authorsQuery: AuthorsQuery, query: PostQuery): DBMonad[Option[(Author, Seq[Post])]] = {
     val action = for {
-      seq <- listAuthorWithPostsAction(authorsQuery.take(1), query)
-      rez <- DBIO.successful(block(seq.headOption))
+      seq <- listAuthorWithPostsAction(authorsQuery.underling.take(1), query.underling)
+      rez <- DBIO.successful(seq.headOption)
     } yield rez
-    db.run(action.transactionally)
+
+    DBMonad(action)
   }
+
+  override def run[T](action: DBMonad[T]): Future[T] = db.run(action.underlined.transactionally)
 
   override lazy val postQueries: PostQ = new PostQ {
-    def *(): PostQuery = posts
-    def byId(id: String): PostQuery = posts.filter(_.id === id)
-    def byTitle(title: String): PostQuery = posts.filter(_.title like title)
-    def byAuthor(authorId: String): PostQuery = posts.filter(_.authorId === authorId)
+    def *(): PostQuery = DBQuery(posts)
+    def byId(id: String): PostQuery = DBQuery(posts.filter(_.id === id))
+    def byTitle(title: String): PostQuery = DBQuery(posts.filter(_.title like title))
+    def byAuthor(authorId: String): PostQuery = DBQuery(posts.filter(_.authorId === authorId))
   }
 
   override lazy val authorQueries: AuthorQ = new AuthorQ {
-    def *(): AuthorsQuery = authors
-    def byAuthor(authorId: String): AuthorsQuery = authors.filter(_.id === authorId)
+    def *(): AuthorsQuery = DBQuery(authors)
+    def byAuthor(authorId: String): AuthorsQuery = DBQuery(authors.filter(_.id === authorId))
   }
 
   override def statistic(): Future[Seq[(String, String, String, Int, Double)]] = {

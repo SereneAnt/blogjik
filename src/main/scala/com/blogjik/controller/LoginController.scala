@@ -19,14 +19,15 @@ class LoginController @Inject()(authorsDao: AuthorDao) extends Controller {
 
     // Just to show that actions are composable as well as queries
     def action(email: String) =  for {
-      author <- authorsDao.find(authorsDao.queries.byEmail(email))({ a => a })
+      author <- authorsDao.find(authorsDao.queries.byEmail(email))
       loginData <- author match {
         case Some(a) =>
-          authorsDao.findWithDetails(authorsDao.queries.byId(a.id) ++ authorsDao.queries.byEmail(a.email)) {
+          authorsDao.findWithDetails(authorsDao.queries.byId(a.id) ++ authorsDao.queries.byEmail(a.email)).map({
             case Some((_, Some(details))) => Some(LoginData(a.email, details.password))
             case _ => None
-          }
-        case None => DBMonad.successful(None)
+          })
+        case None =>
+          DBMonad.successful(None)
       }
     } yield loginData
 

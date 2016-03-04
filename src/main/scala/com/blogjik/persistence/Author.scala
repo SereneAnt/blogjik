@@ -153,7 +153,7 @@ class AuthorDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigPro
     }
   }
 
-  override def run[T](action: DBMonad[T]): Future[T] = db.run(action.underlined.transactionally)
+  override def run[T](action: DBMonad[T]): Future[T] = db.run(action.underling.transactionally)
 
   private def listAction(authorsQuery: Query[AuthorTable, Author, Seq]): DBIO[Seq[Author]] = {
     val query = for {

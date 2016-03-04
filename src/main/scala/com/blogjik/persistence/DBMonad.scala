@@ -5,12 +5,12 @@ import slick.dbio.DBIO
 import scala.concurrent.ExecutionContext
 
 
-class DBMonad[+R](private[persistence] val underlined: DBIO[R])  {
+class DBMonad[+R](private[persistence] val underling: DBIO[R])  {
 
-  def flatMap[R2](f: (R) => DBMonad[R2])(implicit executor: ExecutionContext): DBMonad[R2] = DBMonad(underlined.flatMap(f andThen(_.underlined)))
-  def map[R2](f: R => R2)(implicit executor: ExecutionContext): DBMonad[R2] = DBMonad(underlined.map(f))
-  def filter(p: R => Boolean)(implicit executor: ExecutionContext): DBMonad[R] = DBMonad(underlined.filter(p))
-  def withFilter(p: R => Boolean)(implicit executor: ExecutionContext): DBMonad[R] = DBMonad(underlined.withFilter(p))
+  def flatMap[R2](f: (R) => DBMonad[R2])(implicit executor: ExecutionContext): DBMonad[R2] = DBMonad(underling.flatMap(f andThen(_.underling)))
+  def map[R2](f: R => R2)(implicit executor: ExecutionContext): DBMonad[R2] = DBMonad(underling.map(f))
+  def filter(p: R => Boolean)(implicit executor: ExecutionContext): DBMonad[R] = DBMonad(underling.filter(p))
+  def withFilter(p: R => Boolean)(implicit executor: ExecutionContext): DBMonad[R] = DBMonad(underling.withFilter(p))
 }
 
 object DBMonad {

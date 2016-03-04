@@ -133,7 +133,10 @@ class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
     DBMonad(action)
   }
 
-  override def run[T](action: DBMonad[T]): Future[T] = db.run(action.underlined.transactionally)
+  override def run[T](action: DBMonad[T]): Future[T] = {
+    print(action.underling)
+    db.run(action.underling.transactionally)
+  }
 
   override lazy val postQueries: PostQ = new PostQ {
     def *(): PostQuery = DBQuery(posts)

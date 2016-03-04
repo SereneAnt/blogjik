@@ -165,7 +165,7 @@ class PostDaoImpl @Inject() (protected val dbConfigProvider: DatabaseConfigProvi
       (a, p) <- authorsQuery joinLeft postsQuery on (_.id === _.authorId)
     } yield (a.allColumns, p.map(_.allColumns))
 
-    // TODO describe this magic
+    // TODO describe group by logic
     query.result.map( seq => seq.groupBy(_._1._1).map({
       case (author_id, queryResult) =>
         (AuthorTable.mapRowTupled(queryResult.head._1),

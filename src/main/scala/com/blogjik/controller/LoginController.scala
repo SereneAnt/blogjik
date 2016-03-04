@@ -2,7 +2,7 @@ package com.blogjik.controller
 
 import javax.inject.Inject
 
-import com.blogjik.persistence.AuthorDao
+import com.blogjik.persistence.{DBMonad, AuthorDao}
 import play.api.libs.json.{Writes, Json}
 import play.api.mvc.{Request, Action, Controller}
 
@@ -16,12 +16,23 @@ class LoginController @Inject()(authorsDao: AuthorDao) extends Controller {
 
   // TODO: clear mess with email/login - use either email either login
   def login() = Action.async(parse.urlFormEncoded) { request =>
+
+    // Just to show that actions are composable as well as queries
+    def action(email: String) =  for {
+      author <- authorsDao.find(authorsDao.queries.byEmail(email))({ a => a })
+      loginData <- author match {
+        case Some(a) =>
+          authorsDao.findWithDetails(authorsDao.queries.byId(a.id) ++ authorsDao.queries.byEmail(a.email)) {
+            case Some((_, Some(details))) => Some(LoginData(a.email, details.password))
+            case _ => None
+          }
+        case None => DBMonad.successful(None)
+      }
+    } yield loginData
+
     for {
       loginData <- Future { extractLoginData(request) }
-      fromDB <- authorsDao.findWithDetails(authorsDao.queries.byEmail(loginData.email)) {
-        case Some((author, Some(details))) => Some(LoginData(author.email, details.password))
-        case _ => None
-      }
+      fromDB <- authorsDao.run(action(loginData.email))
     } yield {
       (loginData, fromDB) match {
         case (requestData, Some(dbData)) if encrypted(requestData) == encrypted(dbData) => Ok("logged in")

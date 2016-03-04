@@ -37,16 +37,26 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
     })
   })
 
-  // example of composition in dao layer
-  def findByAuthorId(id: String) = Action.async({ request =>
-    val authorQ = postDao.authorQueries
-    val postQ = postDao.postQueries
-    postDao.run(postDao.findAuthorWithPost(authorQ.byAuthor(id), postQ.*())).map(toDto).map({
-      case Some(dto) => Ok(Json.toJson(dto))
-      case None => NotFound
-    })
-  })
-
+  /**
+    * Preparing statement: select "author_id", "name", "email" from "authors" where "author_id" = '1' limit 1
+    * Execution of prepared statement took 3ms
+    *   - /-----------+------+---------------\
+    *   - | 1         | 2    | 3             |
+    *   - | author_id | name | email         |
+    *   - |-----------+------+---------------|
+    *   - | 1         | Bob  | bob@gmail.com |
+    *   - \-----------+------+---------------/
+    *   - Preparing statement: select "author_id", "likes", "title", "post_id", "updated", "created", "body" from "posts" where "author_id" = '1'
+    *   - Execution of prepared statement took 1ms
+    *   - /-----------+-------+--------------+---------+----------------------+----------------------+---------------------\
+    *   - | 1         | 2     | 3            | 4       | 5                    | 6                    | 7                   |
+    *   - | author_id | likes | title        | post_id | updated              | created              | body                |
+    *   - |-----------+-------+--------------+---------+----------------------+----------------------+---------------------|
+    *   - | 1         | 1     | first blog!  | 1       | 2016-02-26 17:09:... | 2016-02-26 17:09:... | this is first blog  |
+    *   - | 1         | 7     | second blog! | 2       | 2016-03-01 11:17:... | 2016-03-01 11:17:... | this is second blog |
+    *   - | 1         | 12    | third        | 3       | 2016-03-01 16:07:... | 2016-03-01 16:07:... | thir                |
+    *   - \-----------+-------+--------------+---------+----------------------+----------------------+---------------------/
+  **/
   // example of composition outside dao layer
   def findByAuthorIdV2(id: String) = Action.async({ request =>
     val action = for {
@@ -62,6 +72,28 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
       case None => NotFound
     })
 
+  })
+
+  /**
+    *   - Preparing statement: select x2.x3, x4."body", x4."author_id", x4."post_id", x2.x5, x2.x6, x4."created", x4."updated", x4."title", x4."likes" from (select "author_id" as x6, "name" as x3, "email" as x5 from "authors" where "author_id" = '1' limit 1) x2 left outer join "posts" x4 on x2.x6 = x4."author_id"
+    *   - Execution of prepared statement took 1ms
+    *   - /-----+---------------------+-----------+---------+---------------+----+----------------------+----------------------+--------------+-------\
+    *   - | 1   | 2                   | 3         | 4       | 5             | 6  | 7                    | 8                    | 9            | 10    |
+    *   - | x3  | body                | author_id | post_id | x5            | x6 | created              | updated              | title        | likes |
+    *   - |-----+---------------------+-----------+---------+---------------+----+----------------------+----------------------+--------------+-------|
+    *   - | Bob | this is first blog  | 1         | 1       | bob@gmail.com | 1  | 2016-02-26 17:09:... | 2016-02-26 17:09:... | first blog!  | 1     |
+    *   - | Bob | this is second blog | 1         | 2       | bob@gmail.com | 1  | 2016-03-01 11:17:... | 2016-03-01 11:17:... | second blog! | 7     |
+    *   - | Bob | thir                | 1         | 3       | bob@gmail.com | 1  | 2016-03-01 16:07:... | 2016-03-01 16:07:... | third        | 12    |
+    *   - \-----+---------------------+-----------+---------+---------------+----+----------------------+----------------------+--------------+-------/
+  **/
+  // example of composition in dao layer
+  def findByAuthorId(id: String) = Action.async({ request =>
+    val authorQ = postDao.authorQueries
+    val postQ = postDao.postQueries
+    postDao.run(postDao.findAuthorWithPost(authorQ.byAuthor(id), postQ.*())).map(toDto).map({
+      case Some(dto) => Ok(Json.toJson(dto))
+      case None => NotFound
+    })
   })
 
   def statistic() = Action.async({ request =>

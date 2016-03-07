@@ -1,0 +1,8 @@
+//// Database configuration
+
+// See https://www.playframework.com/documentation/2.4.x/PlaySlick.
+// Note that "driver" and "db.driver" options are set in reference.conf and should not be overridden.
+
+// Only PostgreSQL is supported.
+// For PostgreSQL JDBC url format see https://jdbc.postgresql.org/documentation/92/connect.html
+slick.dbs.default.db.url = "jdbc:postgresql://localhost:5432/postgres?user=postgres"

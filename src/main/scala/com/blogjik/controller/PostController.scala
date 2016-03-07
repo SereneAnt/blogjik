@@ -56,7 +56,7 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
     *   - | 1         | 7     | second blog! | 2       | 2016-03-01 11:17:... | 2016-03-01 11:17:... | this is second blog |
     *   - | 1         | 12    | third        | 3       | 2016-03-01 16:07:... | 2016-03-01 16:07:... | thir                |
     *   - \-----------+-------+--------------+---------+----------------------+----------------------+---------------------/
-  **/
+    */
   // example of composition outside dao layer
   def findByAuthorIdV2(id: String) = Action.async({ request =>
     val action = for {
@@ -85,7 +85,7 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
     *   - | Bob | this is second blog | 1         | 2       | bob@gmail.com | 1  | 2016-03-01 11:17:... | 2016-03-01 11:17:... | second blog! | 7     |
     *   - | Bob | thir                | 1         | 3       | bob@gmail.com | 1  | 2016-03-01 16:07:... | 2016-03-01 16:07:... | third        | 12    |
     *   - \-----+---------------------+-----------+---------+---------------+----+----------------------+----------------------+--------------+-------/
-  **/
+    */
   // example of composition in dao layer
   def findByAuthorId(id: String) = Action.async({ request =>
     val authorQ = postDao.authorQueries

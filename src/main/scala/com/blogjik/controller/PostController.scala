@@ -11,12 +11,13 @@ import play.api.mvc.Action
 import play.api.libs.json._
 import play.api.mvc._
 
-import scala.util.{Success, Try}
+import scala.util.Try
 
 
 class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends Controller {
 
   import PostController._
+  import com.blogjik.util.ControllerUtils._
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
   def list() = Action.async({ request =>
@@ -31,10 +32,7 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
 
   def find(id: String) = Action.async({ request =>
     val postQ = postDao.postQueries
-    postDao.run(postDao.find(postQ.byId(id))).map({
-      case Some(post) => Ok(Json.toJson(post))
-      case None => NotFound
-    })
+    postDao.run(postDao.find(postQ.byId(id))).map({ _returnData[Post] orElse _notFound })
   })
 
   /**
@@ -65,13 +63,9 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
         case Some(a) => postDao.list(postDao.postQueries.byAuthor(a.id))
         case _ => DBMonad.successful(Seq())
       }
-    } yield author.map(a => (a ,posts))
+    } yield author.map(a => (a, posts))
 
-    postDao.run(action).map(toDto).map({
-      case Some(dto) => Ok(Json.toJson(dto))
-      case None => NotFound
-    })
-
+    postDao.run(action).map(toDto).map({ _returnData[AuthorPostDto] orElse _notFound })
   })
 
   /**
@@ -90,10 +84,8 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
   def findByAuthorId(id: String) = Action.async({ request =>
     val authorQ = postDao.authorQueries
     val postQ = postDao.postQueries
-    postDao.run(postDao.findAuthorWithPost(authorQ.byAuthor(id), postQ.*())).map(toDto).map({
-      case Some(dto) => Ok(Json.toJson(dto))
-      case None => NotFound
-    })
+    postDao.run(postDao.findAuthorWithPost(authorQ.byAuthor(id), postQ.*()))
+      .map(toDto).map({ _returnData[AuthorPostDto] orElse _notFound })
   })
 
   def statistic() = Action.async({ request =>
@@ -103,6 +95,7 @@ class PostController @Inject()(postDao: PostDao, authorDao: AuthorDao) extends C
 
 
 object PostController {
+  import com.blogjik.util.ControllerUtils._
 
   val dateTimeFormat = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
@@ -110,25 +103,12 @@ object PostController {
     override def writes(o: OffsetDateTime): JsValue = JsString(dateTimeFormat.format(o.withOffsetSameInstant(ZoneOffset.UTC)))
 
     override def reads(json: JsValue): JsResult[OffsetDateTime] = {
-      ((readString andThen parseDate andThen (_success orElse _error)) orElse _error)(json)
-    }
-
-    private def readString: PartialFunction[JsValue, String] = {
-      case JsString(date) => date
+      ((readString andThen parseDate andThen (_success[OffsetDateTime] orElse _error[OffsetDateTime])) orElse _error[OffsetDateTime])(json)
     }
 
     private def parseDate: PartialFunction[String, Try[OffsetDateTime]] = {
       case date => Try(OffsetDateTime.from(dateTimeFormat.parse(date)))
     }
-
-    private def _success: PartialFunction[Try[OffsetDateTime], JsResult[OffsetDateTime]] = {
-      case Success(d) => JsSuccess(d)
-    }
-
-    private def _error: PartialFunction[Any, JsResult[OffsetDateTime]] = {
-      case _ => JsError("date time should be in correct format - ISO Date Time format")
-    }
-
   }
 
   implicit val postFormat: Format[Post] = Json.format[Post]
